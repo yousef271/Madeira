@@ -82,6 +82,15 @@ jobs:
           /opt/homebrew/bin/wine --version
           /opt/homebrew/bin/wine wineboot --init || true
 
+      - name: Build Wine Host Tools
+        run: |
+          cd wine
+          mkdir -p build-macos
+          cd build-macos
+          ../configure --enable-win64
+          make -j$(sysctl -n hw.ncpu) tools/winebuild/winebuild
+          cd ../..
+
       - name: Run Native Build Scripts
         env:
           WINEDEBUG: -all
