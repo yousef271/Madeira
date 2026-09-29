@@ -34,7 +34,9 @@ jobs:
       - name: Set up Toolchains & Dependencies
         run: |
           sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
-          brew install bison flex llvm mingw-w64 pkg-config meson ninja cmake wget
+          # mingw-w64 removed: llvm-mingw below provides the cross toolchain and
+          # brew's mingw-w64 (GCC) can shadow it and cause header/ABI mismatches.
+          brew install bison flex llvm pkg-config meson ninja cmake wget
 
           mkdir -p toolchains
           cd toolchains
@@ -43,6 +45,7 @@ jobs:
           cd ..
 
           echo "MINGW_BIN=$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin" >> $GITHUB_ENV
+          echo "LLVM_PREFIX=$(brew --prefix llvm)" >> $GITHUB_ENV
           echo "$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin" >> $GITHUB_PATH
           echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
           echo "$(brew --prefix flex)/bin" >> $GITHUB_PATH
@@ -102,23 +105,43 @@ jobs:
           set -euo pipefail
           export PATH="$PATH:$MINGW_BIN"
 
+          echo "--- toolchain versions ---"
           which clang bison flex wine || true
+          clang --version | head -1
+          "$LLVM_PREFIX/bin/llvm-config" --version || true
           bison --version | head -1
+          xcrun --sdk iphoneos --show-sdk-version
 
           for script in build/*/build.sh; do
             echo "Running $script..."
             bash -x "$script"
           done
 
+      # Prints the real compiler errors (first lines of each .err) so the
+      # actual cause shows up in the log instead of just "19 failed".
       - name: Dump Build Error Logs
         if: failure()
         run: |
-          for errfile in build/dxmt-ios/obj/*.err; do
+          shopt -s nullglob
+          found=0
+          for errfile in build/*/obj/*.err; do
             if [ -s "$errfile" ]; then
+              found=1
               echo "=== ERROR IN $errfile ==="
-              cat "$errfile"
+              head -n 40 "$errfile"
+              echo
             fi
           done
+          [ "$found" = 1 ] || echo "No non-empty .err files found under build/*/obj/"
+
+      - name: Upload Error Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-error-logs
+          path: |
+            build/*/obj/*.err
+          if-no-files-found: ignore
 
       - name: Build Xcode Project / IPA
         run: |
