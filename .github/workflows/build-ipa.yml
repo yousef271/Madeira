@@ -15,29 +15,27 @@ jobs:
 
       - name: Fetch Microsoft VC++ Runtime DLLs
         run: |
-          # The Madeira documentation explicitly requires these DLLs to be downloaded
           brew install sevenzip
           curl -LO https://aka.ms/vs/17/release/vc_redist.x64.exe
           
-          # Extract them using 7-Zip as per tools/fetch-vcruntime.md
           mkdir -p /tmp/vcredist
           7zz x vc_redist.x64.exe -o/tmp/vcredist
-          mkdir -p app/Madeira/x86_64-vcruntime
-          7zz x /tmp/vcredist/.rsrc/1033/CABINET/*.cab -oapp/Madeira/x86_64-vcruntime
           
-          echo "VC Runtime DLLs fetched successfully!"
+          # Dynamically find the cabinet file wherever 7-Zip unpacked it
+          mkdir -p app/Madeira/x86_64-vcruntime
+          CAB_FILE=$(find /tmp/vcredist -name "*.cab" | head -n 1)
+          echo "Found cabinet file at: $CAB_FILE"
+          7zz x "$CAB_FILE" -oapp/Madeira/x86_64-vcruntime
+          
+          echo "VC Runtime DLLs extracted successfully!"
 
       - name: Set up Xcode & Dependencies
         run: |
           sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
-          
-          # Install core build dependencies that the native build scripts usually need on macOS
           brew install bison flex mingw-w64 pkg-config meson ninja cmake
 
       - name: Run Native Build Scripts
         run: |
-          # Madeira's build is split across several chains (unix-side Wine, ARM-PE modules, FEX, DXMT)
-          # We must run all the native build.sh scripts in the build directory before Xcode can bundle them.
           for script in build/*/build.sh; do
             echo "Running $script..."
             bash "$script"
@@ -45,7 +43,6 @@ jobs:
 
       - name: Build Xcode Project / IPA
         run: |
-          # Now that the native components and vcruntime exist, xcodebuild won't crash
           xcodebuild -project app/Madeira.xcodeproj \
             -scheme Madeira \
             -configuration Release \
