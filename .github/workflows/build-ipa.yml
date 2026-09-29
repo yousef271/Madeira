@@ -54,9 +54,13 @@ jobs:
           sudo softwareupdate --install-rosetta --agree-to-license || true
 
           # Homebrew wine casks are disabled; grab Gcenx's build directly
-          URL="$(gh api 'repos/Gcenx/macOS_Wine_builds/releases?per_page=15' \
-            --jq '.[].assets[].browser_download_url' \
-            | grep -E 'wine-stable-[0-9.]+-osx64\.tar\.xz$' | head -1)"
+          ASSETS="$(gh api 'repos/Gcenx/macOS_Wine_builds/releases?per_page=15' \
+            --jq '.[].assets[].browser_download_url')"
+          echo "Available wine assets:"
+          echo "$ASSETS" | grep -E 'osx64\.tar\.xz$' || true
+
+          URL="$(echo "$ASSETS" | grep -E '/wine-stable-[0-9._]+-osx64\.tar\.xz$' | head -1)"
+          [ -n "$URL" ] || URL="$(echo "$ASSETS" | grep -E '/wine-(devel|staging)-[0-9._]+(-wow64)?-osx64\.tar\.xz$' | head -1)"
           echo "Wine download: $URL"
           test -n "$URL"
 
