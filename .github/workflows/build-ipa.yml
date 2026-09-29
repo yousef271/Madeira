@@ -36,19 +36,22 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
           brew install bison flex mingw-w64 pkg-config meson ninja cmake wget
           
-          # Download and unpack llvm-mingw into the expected toolchains/ directory
           mkdir -p toolchains
           cd toolchains
-          # Using the stable llvm-mingw release path matching the project requirements
           curl -L https://github.com/mstorsjo/llvm-mingw/releases/download/20260421/llvm-mingw-20260421-ucrt-macos-universal.tar.xz -o llvm-mingw.tar.xz
           tar -xf llvm-mingw.tar.xz
           cd ..
           
-          # Ensure path awareness
-          echo "$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin" >> $GITHUB_PATH
+          # Force export llvm-mingw globally into GITHUB_PATH and local shell profile
+          TOOLCHAIN_BIN="$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin"
+          echo "$TOOLCHAIN_BIN" >> $GITHUB_PATH
+          echo "PATH=$TOOLCHAIN_BIN:$PATH" >> $GITHUB_ENV
 
       - name: Run Native Build Scripts
         run: |
+          # Ensure PATH is explicitly inherited for sub-scripts
+          export PATH="$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin:$PATH"
+          
           for script in build/*/build.sh; do
             echo "Running $script..."
             bash "$script"
@@ -56,6 +59,8 @@ jobs:
 
       - name: Build Xcode Project / IPA
         run: |
+          export PATH="$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin:$PATH"
+          
           xcodebuild -project app/Madeira.xcodeproj \
             -scheme Madeira \
             -configuration Release \
