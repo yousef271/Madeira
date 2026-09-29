@@ -42,8 +42,8 @@ jobs:
           tar -xf llvm-mingw.tar.xz
           cd ..
 
-          # Don't touch PATH globally; just remember where things are
           echo "MINGW_BIN=$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin" >> $GITHUB_ENV
+          echo "$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin" >> $GITHUB_PATH
           echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
           echo "$(brew --prefix flex)/bin" >> $GITHUB_PATH
 
@@ -55,7 +55,6 @@ jobs:
         run: |
           sudo softwareupdate --install-rosetta --agree-to-license || true
 
-          # Homebrew wine casks are disabled; grab Gcenx's build directly
           ASSETS="$(gh api 'repos/Gcenx/macOS_Wine_builds/releases?per_page=15' \
             --jq '.[].assets[].browser_download_url')"
           echo "Available wine assets:"
@@ -74,7 +73,6 @@ jobs:
           echo "Wine binary: $WINE_BIN"
           test -n "$WINE_BIN"
 
-          # The build script hardcodes /opt/homebrew/bin/wine
           sudo ln -sf "$WINE_BIN" /opt/homebrew/bin/wine
 
           export WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml="
@@ -84,6 +82,9 @@ jobs:
 
       - name: Build Wine Host Tools
         run: |
+          # Expose the toolchain bin path directly in this step
+          export PATH="$MINGW_BIN:$PATH"
+
           cd wine
           mkdir -p build-macos
           cd build-macos
@@ -100,7 +101,6 @@ jobs:
           DISPLAY: ""
         run: |
           set -euo pipefail
-          # llvm-mingw at the END so it can't shadow host clang/ld
           export PATH="$PATH:$MINGW_BIN"
 
           which clang bison flex wine || true
