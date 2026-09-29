@@ -110,6 +110,16 @@ jobs:
             bash -x "$script"
           done
 
+      - name: Dump Build Error Logs
+        if: failure()
+        run: |
+          for errfile in build/dxmt-ios/obj/*.err; do
+            if [ -s "$errfile" ]; then
+              echo "=== ERROR IN $errfile ==="
+              cat "$errfile"
+            fi
+          done
+
       - name: Build Xcode Project / IPA
         run: |
           export PATH="$PATH:$MINGW_BIN"
