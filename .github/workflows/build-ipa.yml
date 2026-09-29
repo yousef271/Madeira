@@ -48,31 +48,30 @@ jobs:
           echo "$(brew --prefix flex)/bin" >> $GITHUB_PATH
 
       - name: Install Wine (for host HLSL compiler)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           sudo softwareupdate --install-rosetta --agree-to-license || true
-          brew tap gcenx/wine
 
-          echo "Casks in gcenx/wine:"
-          ls "$(brew --repository gcenx/wine)/Casks" || true
+          # Homebrew wine casks are disabled; grab Gcenx's build directly
+          URL="$(gh api 'repos/Gcenx/macOS_Wine_builds/releases?per_page=15' \
+            --jq '.[].assets[].browser_download_url' \
+            | grep -E 'wine-stable-[0-9.]+-osx64\.tar\.xz$' | head -1)"
+          echo "Wine download: $URL"
+          test -n "$URL"
 
-          # Try a few packages until one installs
-          brew install --cask gcenx/wine/wine-crossover \
-            || brew install --cask gcenx/wine/wine-stable \
-            || brew install --cask wine@staging \
-            || brew install --cask wine@devel
+          mkdir -p "$HOME/wine-dist"
+          curl -L "$URL" -o /tmp/wine.tar.xz
+          tar -xf /tmp/wine.tar.xz -C "$HOME/wine-dist"
 
-          # --no-quarantine is gone from brew; strip the flag manually
-          sudo xattr -dr com.apple.quarantine /Applications/Wine*.app 2>/dev/null || true
+          WINE_BIN="$(find "$HOME/wine-dist" -path '*Resources/wine/bin/wine' \( -type f -o -type l \) | head -1)"
+          echo "Wine binary: $WINE_BIN"
+          test -n "$WINE_BIN"
 
-          # Make sure the path the build script hardcodes exists
-          if [ ! -x /opt/homebrew/bin/wine ]; then
-            WINE_BIN="$(find /Applications -path '*Resources/wine/bin/wine' -type f 2>/dev/null | head -1)"
-            echo "Linking $WINE_BIN"
-            sudo ln -sf "$WINE_BIN" /opt/homebrew/bin/wine
-          fi
+          # The build script hardcodes /opt/homebrew/bin/wine
+          sudo ln -sf "$WINE_BIN" /opt/homebrew/bin/wine
 
           export WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml="
-          ls -l /opt/homebrew/bin/wine
           /opt/homebrew/bin/wine --version
           /opt/homebrew/bin/wine wineboot --init || true
 
