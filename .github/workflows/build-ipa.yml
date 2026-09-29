@@ -1,11 +1,11 @@
 name: Build Madeira IPA
 
 on:
-  workflow_dispatch: # Allows you to trigger the build manually from the Actions tab
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-14 # Uses a fast macOS Sonoma runner with Xcode pre-installed
+    runs-on: macos-14
 
     steps:
       - name: Checkout Repository with Submodules
@@ -13,21 +13,39 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Set up Xcode
+      - name: Fetch Microsoft VC++ Runtime DLLs
         run: |
-          sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer # Adjust version if needed, or leave default
-          xcodebuild -version
+          # The Madeira documentation explicitly requires these DLLs to be downloaded
+          brew install sevenzip
+          curl -LO https://aka.ms/vs/17/release/vc_redist.x64.exe
+          
+          # Extract them using 7-Zip as per tools/fetch-vcruntime.md
+          mkdir -p /tmp/vcredist
+          7zz x vc_redist.x64.exe -o/tmp/vcredist
+          mkdir -p app/Madeira/x86_64-vcruntime
+          7zz x /tmp/vcredist/.rsrc/1033/CABINET/*.cab -oapp/Madeira/x86_64-vcruntime
+          
+          echo "VC Runtime DLLs fetched successfully!"
 
-      - name: Run Build Scripts
+      - name: Set up Xcode & Dependencies
         run: |
-          # Madeira's build is split across Unix-side Wine, FEX, DXMT, etc.
-          # Execute native build scripts located in build/*/build.sh or similar entry points
-          bash build/ios/build.sh || echo "Check repository build scripts paths if this fails"
+          sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
+          
+          # Install core build dependencies that the native build scripts usually need on macOS
+          brew install bison flex mingw-w64 pkg-config meson ninja cmake
+
+      - name: Run Native Build Scripts
+        run: |
+          # Madeira's build is split across several chains (unix-side Wine, ARM-PE modules, FEX, DXMT)
+          # We must run all the native build.sh scripts in the build directory before Xcode can bundle them.
+          for script in build/*/build.sh; do
+            echo "Running $script..."
+            bash "$script"
+          done
 
       - name: Build Xcode Project / IPA
         run: |
-          # Build the iOS target using xcodebuild and output to an archive/payload folder
-          # (Modify target/scheme names based on the exact Xcode project structure in /app or root)
+          # Now that the native components and vcruntime exist, xcodebuild won't crash
           xcodebuild -project app/Madeira.xcodeproj \
             -scheme Madeira \
             -configuration Release \
@@ -35,7 +53,6 @@ jobs:
             -derivedDataPath build/DerivedData \
             CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 
-          # Package into a Payload folder to create the .ipa
           mkdir -p Payload
           mv build/DerivedData/Build/Products/Release-iphoneos/Madeira.app Payload/
           zip -r Madeira.ipa Payload/
