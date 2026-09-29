@@ -21,13 +21,21 @@ jobs:
           mkdir -p /tmp/vcredist
           7zz x vc_redist.x64.exe -o/tmp/vcredist
           
-          # Dynamically find the cabinet file wherever 7-Zip unpacked it
-          mkdir -p app/Madeira/x86_64-vcruntime
-          CAB_FILE=$(find /tmp/vcredist -name "*.cab" | head -n 1)
-          echo "Found cabinet file at: $CAB_FILE"
-          7zz x "$CAB_FILE" -oapp/Madeira/x86_64-vcruntime
+          # Recursively extract any .cab files found inside the installer payload
+          mkdir -p /tmp/vcredist_cab
+          find /tmp/vcredist -name "*.cab" | while read -r cab; do
+            echo "Extracting cabinet: $cab"
+            7zz x "$cab" -o/tmp/vcredist_cab || true
+          done
           
-          echo "VC Runtime DLLs extracted successfully!"
+          # Gather all extracted DLLs and copy them to the target directory expected by Xcode
+          mkdir -p app/Madeira/x86_64-vcruntime
+          find /tmp/vcredist /tmp/vcredist_cab -name "*.dll" | while read -r dll; do
+            cp "$dll" app/Madeira/x86_64-vcruntime/
+          done
+          
+          echo "Successfully gathered the following DLLs:"
+          ls -la app/Madeira/x86_64-vcruntime/
 
       - name: Set up Xcode & Dependencies
         run: |
