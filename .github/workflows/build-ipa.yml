@@ -82,7 +82,6 @@ jobs:
 
       - name: Build Wine Host Tools
         run: |
-          # Expose the toolchain bin path directly in this step
           export PATH="$MINGW_BIN:$PATH"
 
           cd wine
@@ -99,6 +98,8 @@ jobs:
           MVK_CONFIG_STRICT_MODE: 0
           MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS: 0
           DISPLAY: ""
+          # Point the build scripts to the local wine source headers
+          CFLAGS: "-I$(pwd)/wine -I$(pwd)/wine/include"
         run: |
           set -euo pipefail
           export PATH="$PATH:$MINGW_BIN"
