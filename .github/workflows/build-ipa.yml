@@ -51,12 +51,30 @@ jobs:
         run: |
           sudo softwareupdate --install-rosetta --agree-to-license || true
           brew tap gcenx/wine
-          brew install --cask --no-quarantine gcenx/wine/wine-stable
 
-          which wine
+          echo "Casks in gcenx/wine:"
+          ls "$(brew --repository gcenx/wine)/Casks" || true
+
+          # Try a few packages until one installs
+          brew install --cask gcenx/wine/wine-crossover \
+            || brew install --cask gcenx/wine/wine-stable \
+            || brew install --cask wine@staging \
+            || brew install --cask wine@devel
+
+          # --no-quarantine is gone from brew; strip the flag manually
+          sudo xattr -dr com.apple.quarantine /Applications/Wine*.app 2>/dev/null || true
+
+          # Make sure the path the build script hardcodes exists
+          if [ ! -x /opt/homebrew/bin/wine ]; then
+            WINE_BIN="$(find /Applications -path '*Resources/wine/bin/wine' -type f 2>/dev/null | head -1)"
+            echo "Linking $WINE_BIN"
+            sudo ln -sf "$WINE_BIN" /opt/homebrew/bin/wine
+          fi
+
           export WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml="
-          wine --version
-          wineboot --init || true
+          ls -l /opt/homebrew/bin/wine
+          /opt/homebrew/bin/wine --version
+          /opt/homebrew/bin/wine wineboot --init || true
 
       - name: Run Native Build Scripts
         env:
