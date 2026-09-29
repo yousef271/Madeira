@@ -47,13 +47,27 @@ jobs:
           echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
           echo "$(brew --prefix flex)/bin" >> $GITHUB_PATH
 
+      - name: Install Wine (for host HLSL compiler)
+        run: |
+          sudo softwareupdate --install-rosetta --agree-to-license || true
+          brew tap gcenx/wine
+          brew install --cask --no-quarantine gcenx/wine/wine-stable
+
+          which wine
+          export WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml="
+          wine --version
+          wineboot --init || true
+
       - name: Run Native Build Scripts
+        env:
+          WINEDEBUG: -all
+          WINEDLLOVERRIDES: mscoree,mshtml=
         run: |
           set -euo pipefail
           # llvm-mingw at the END so it can't shadow host clang/ld
           export PATH="$PATH:$MINGW_BIN"
 
-          which clang bison flex || true
+          which clang bison flex wine || true
           bison --version | head -1
 
           for script in build/*/build.sh; do
