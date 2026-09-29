@@ -21,26 +21,31 @@ jobs:
           mkdir -p /tmp/vcredist
           7zz x vc_redist.x64.exe -o/tmp/vcredist
           
-          # Recursively extract any .cab files found inside the installer payload
           mkdir -p /tmp/vcredist_cab
           find /tmp/vcredist -name "*.cab" | while read -r cab; do
-            echo "Extracting cabinet: $cab"
             7zz x "$cab" -o/tmp/vcredist_cab || true
           done
           
-          # Gather all extracted DLLs and copy them to the target directory expected by Xcode
           mkdir -p app/Madeira/x86_64-vcruntime
           find /tmp/vcredist /tmp/vcredist_cab -name "*.dll" | while read -r dll; do
             cp "$dll" app/Madeira/x86_64-vcruntime/
           done
-          
-          echo "Successfully gathered the following DLLs:"
-          ls -la app/Madeira/x86_64-vcruntime/
 
-      - name: Set up Xcode & Dependencies
+      - name: Set up Toolchains & Dependencies
         run: |
           sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
-          brew install bison flex mingw-w64 pkg-config meson ninja cmake
+          brew install bison flex mingw-w64 pkg-config meson ninja cmake wget
+          
+          # Download and unpack llvm-mingw into the expected toolchains/ directory
+          mkdir -p toolchains
+          cd toolchains
+          # Using the stable llvm-mingw release path matching the project requirements
+          curl -L https://github.com/mstorsjo/llvm-mingw/releases/download/20260421/llvm-mingw-20260421-ucrt-macos-universal.tar.xz -o llvm-mingw.tar.xz
+          tar -xf llvm-mingw.tar.xz
+          cd ..
+          
+          # Ensure path awareness
+          echo "$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin" >> $GITHUB_PATH
 
       - name: Run Native Build Scripts
         run: |
