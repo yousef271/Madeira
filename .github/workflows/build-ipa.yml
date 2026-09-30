@@ -6,7 +6,6 @@ on:
 jobs:
   build:
     runs-on: macos-14
-
     steps:
       - name: Checkout Repository with Submodules
         uses: actions/checkout@v4
@@ -17,15 +16,12 @@ jobs:
         run: |
           brew install sevenzip
           curl -LO https://aka.ms/vs/17/release/vc_redist.x64.exe
-
           mkdir -p /tmp/vcredist
           7zz x vc_redist.x64.exe -o/tmp/vcredist
-
           mkdir -p /tmp/vcredist_cab
           find /tmp/vcredist -name "*.cab" | while read -r cab; do
             7zz x "$cab" -o/tmp/vcredist_cab || true
           done
-
           mkdir -p app/Madeira/x86_64-vcruntime
           find /tmp/vcredist /tmp/vcredist_cab -name "*.dll" | while read -r dll; do
             cp "$dll" app/Madeira/x86_64-vcruntime/
@@ -34,19 +30,21 @@ jobs:
       - name: Set up Toolchains & Dependencies
         run: |
           sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
-          # mingw-w64 removed: llvm-mingw below provides the cross toolchain and
-          # brew's mingw-w64 (GCC) can shadow it and cause header/ABI mismatches.
           brew install bison flex llvm pkg-config meson ninja cmake wget
-
           mkdir -p toolchains
           cd toolchains
           curl -L https://github.com/mstorsjo/llvm-mingw/releases/download/20260421/llvm-mingw-20260421-ucrt-macos-universal.tar.xz -o llvm-mingw.tar.xz
           tar -xf llvm-mingw.tar.xz
           cd ..
-
-          echo "MINGW_BIN=$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin" >> $GITHUB_ENV
+          
+          MINGW_PREFIX="$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal"
+          echo "MINGW_BIN=$MINGW_PREFIX/bin" >> $GITHUB_ENV
           echo "LLVM_PREFIX=$(brew --prefix llvm)" >> $GITHUB_ENV
-          echo "$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin" >> $GITHUB_PATH
+          echo "CC_w64=$MINGW_PREFIX/bin/x86_64-w64-mingw32-clang" >> $GITHUB_ENV
+          echo "CXX_w64=$MINGW_PREFIX/bin/x86_64-w64-mingw32-clang++" >> $GITHUB_ENV
+          echo "INCLUDES_w64=$MINGW_PREFIX/x86_64-w64-mingw32/include" >> $GITHUB_ENV
+          
+          echo "$MINGW_PREFIX/bin" >> $GITHUB_PATH
           echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
           echo "$(brew --prefix flex)/bin" >> $GITHUB_PATH
 
@@ -57,27 +55,21 @@ jobs:
           MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS: 0
         run: |
           sudo softwareupdate --install-rosetta --agree-to-license || true
-
           ASSETS="$(gh api 'repos/Gcenx/macOS_Wine_builds/releases?per_page=15' \
             --jq '.[].assets[].browser_download_url')"
           echo "Available wine assets:"
           echo "$ASSETS" | grep -E 'osx64\.tar\.xz$' || true
-
           URL="$(echo "$ASSETS" | grep -E '/wine-stable-[0-9._]+-osx64\.tar\.xz$' | head -1)"
           [ -n "$URL" ] || URL="$(echo "$ASSETS" | grep -E '/wine-(devel|staging)-[0-9._]+(-wow64)?-osx64\.tar\.xz$' | head -1)"
           echo "Wine download: $URL"
           test -n "$URL"
-
           mkdir -p "$HOME/wine-dist"
           curl -L "$URL" -o /tmp/wine.tar.xz
           tar -xf /tmp/wine.tar.xz -C "$HOME/wine-dist"
-
           WINE_BIN="$(find "$HOME/wine-dist" -path '*Resources/wine/bin/wine' \( -type f -o -type l \) | head -1)"
           echo "Wine binary: $WINE_BIN"
           test -n "$WINE_BIN"
-
           sudo ln -sf "$WINE_BIN" /opt/homebrew/bin/wine
-
           export WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml="
           export DISPLAY=""
           /opt/homebrew/bin/wine --version
@@ -86,7 +78,6 @@ jobs:
       - name: Build Wine Host Tools
         run: |
           export PATH="$MINGW_BIN:$PATH"
-
           cd wine
           mkdir -p build-macos
           cd build-macos
@@ -101,24 +92,24 @@ jobs:
           MVK_CONFIG_STRICT_MODE: 0
           MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS: 0
           DISPLAY: ""
+          CC: x86_64-w64-mingw32-clang
+          CXX: x86_64-w64-mingw32-clang++
         run: |
           set -euo pipefail
           export PATH="$PATH:$MINGW_BIN"
-
           echo "--- toolchain versions ---"
-          which clang bison flex wine || true
+          which clang bison flex wine x86_64-w64-mingw32-clang || true
           clang --version | head -1
+          x86_64-w64-mingw32-clang --version | head -1
           "$LLVM_PREFIX/bin/llvm-config" --version || true
           bison --version | head -1
           xcrun --sdk iphoneos --show-sdk-version
-
+          
           for script in build/*/build.sh; do
             echo "Running $script..."
             bash -x "$script"
           done
 
-      # Prints the real compiler errors (first lines of each .err) so the
-      # actual cause shows up in the log instead of just "19 failed".
       - name: Dump Build Error Logs
         if: failure()
         run: |
@@ -146,14 +137,12 @@ jobs:
       - name: Build Xcode Project / IPA
         run: |
           export PATH="$PATH:$MINGW_BIN"
-
           xcodebuild -project app/Madeira.xcodeproj \
             -scheme Madeira \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build/DerivedData \
             CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
-
           mkdir -p Payload
           mv build/DerivedData/Build/Products/Release-iphoneos/Madeira.app Payload/
           zip -r Madeira.ipa Payload/
