@@ -30,9 +30,7 @@ jobs:
       - name: Set up Toolchains & Dependencies
         run: |
           sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
-          brew install bison flex llvm pkg-config meson ninja wget
-          python3 -m pip install --user 'cmake<4'
-          echo "$HOME/Library/Python/$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')/bin" >> "$GITHUB_PATH"
+          brew install bison flex llvm pkg-config meson ninja cmake wget
           mkdir -p toolchains
           cd toolchains
           curl -L https://github.com/mstorsjo/llvm-mingw/releases/download/20260421/llvm-mingw-20260421-ucrt-macos-universal.tar.xz -o llvm-mingw.tar.xz
@@ -65,14 +63,20 @@ jobs:
             git clone --depth 1 --branch llvmorg-15.0.7 \
               https://github.com/llvm/llvm-project.git toolchains/llvm-project
           fi
+          rm -rf toolchains/llvm-ios-build
           cmake -S toolchains/llvm-project/llvm -B toolchains/llvm-ios-build -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=18.0 \
+            -DCMAKE_MACOSX_BUNDLE=OFF \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_TARGETS_TO_BUILD=AArch64 \
+            -DLLVM_DEFAULT_TARGET_TRIPLE=arm64-apple-ios18.0 \
             -DLLVM_INCLUDE_TESTS=OFF \
             -DLLVM_INCLUDE_EXAMPLES=OFF \
             -DLLVM_INCLUDE_BENCHMARKS=OFF \
-            -DLLVM_BUILD_TOOLS=ON \
-            -DLLVM_BUILD_UTILS=ON \
+            -DLLVM_BUILD_TOOLS=OFF \
             -DLLVM_ENABLE_ZLIB=OFF \
             -DLLVM_ENABLE_ZSTD=OFF \
             -DLLVM_ENABLE_LIBXML2=OFF \
