@@ -75,6 +75,9 @@ jobs:
           cd build-macos
           ../configure --enable-win64
           make -j$(sysctl -n hw.ncpu) tools/winebuild/winebuild
+          # Ensure winebuild is discoverable by native compilation scripts
+          echo "WINEBUILD_BIN=$(pwd)/tools/winebuild/winebuild" >> $GITHUB_ENV
+          echo "$(pwd)/tools/winebuild" >> $GITHUB_PATH
           cd ../..
 
       - name: Run Native Build Scripts
@@ -88,7 +91,11 @@ jobs:
           CXX: x86_64-w64-mingw32-clang++
         run: |
           set -euo pipefail
-          export PATH="$PATH:$MINGW_BIN"
+          export PATH="$PATH:$MINGW_BIN:$(pwd)/wine/build-macos/tools/winebuild"
+          
+          echo "--- toolchain versions ---"
+          which x86_64-w64-mingw32-clang winebuild || true
+          
           for script in build/*/build.sh; do
             echo "Running $script..."
             bash -x "$script"
@@ -99,12 +106,6 @@ jobs:
           export PATH="$PATH:$MINGW_BIN"
           set -o pipefail
           xcodebuild -project app/Madeira.xcodeproj \
-            -scheme Madeira \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath build/DerivedData \
-            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
-            | xcpretty || xcodebuild -project app/Madeira.xcodeproj \
             -scheme Madeira \
             -configuration Release \
             -sdk iphoneos \
