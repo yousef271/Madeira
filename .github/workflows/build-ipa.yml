@@ -36,13 +36,52 @@ jobs:
           curl -L https://github.com/mstorsjo/llvm-mingw/releases/download/20260421/llvm-mingw-20260421-ucrt-macos-universal.tar.xz -o llvm-mingw.tar.xz
           tar -xf llvm-mingw.tar.xz
           cd ..
-          
+
           MINGW_PREFIX="$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal"
           echo "MINGW_BIN=$MINGW_PREFIX/bin" >> $GITHUB_ENV
           echo "LLVM_PREFIX=$(brew --prefix llvm)" >> $GITHUB_ENV
           echo "$MINGW_PREFIX/bin" >> $GITHUB_PATH
           echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
           echo "$(brew --prefix flex)/bin" >> $GITHUB_PATH
+
+      - name: Cache LLVM (iOS headers for airconv)
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            toolchains/llvm-project
+            toolchains/llvm-ios-build
+          key: llvm-ios-15.0.7-${{ runner.os }}-v1
+
+      - name: Prepare LLVM for airconv
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          # NOTE: 15.0.7 is a guess at the version DXMT's airconv expects.
+          # Match it to your local toolchains/llvm-project checkout.
+          if [ ! -d toolchains/llvm-project ]; then
+            git clone --depth 1 --branch llvmorg-15.0.7 \
+              https://github.com/llvm/llvm-project.git toolchains/llvm-project
+          fi
+          cmake -S toolchains/llvm-project/llvm -B toolchains/llvm-ios-build -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=18.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_TARGETS_TO_BUILD=AArch64 \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_BENCHMARKS=OFF \
+            -DLLVM_BUILD_TOOLS=OFF \
+            -DLLVM_ENABLE_ZLIB=OFF \
+            -DLLVM_ENABLE_ZSTD=OFF \
+            -DLLVM_ENABLE_LIBXML2=OFF \
+            -DLLVM_ENABLE_TERMINFO=OFF
+          # Generates the .inc headers (IntrinsicEnums.inc, Attributes.inc, ...)
+          ninja -C toolchains/llvm-ios-build intrinsics_gen
+          # If the Xcode project links LLVM static libs, build them here too, e.g.:
+          # ninja -C toolchains/llvm-ios-build LLVMCore LLVMSupport LLVMBitWriter
 
       - name: Install Wine (for host HLSL compiler)
         env:
@@ -92,13 +131,27 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$PATH:$MINGW_BIN:$(pwd)/wine/build-macos/tools/winebuild"
-          
+
           echo "--- toolchain versions ---"
           which x86_64-w64-mingw32-clang winebuild || true
-          
+
+          echo "--- LLVM dirs ---"
+          ls toolchains/llvm-project/llvm/include >/dev/null && echo "llvm source headers: OK"
+          ls toolchains/llvm-ios-build/include >/dev/null && echo "llvm generated headers: OK"
+
           for script in build/*/build.sh; do
             echo "Running $script..."
-            bash -x "$script"
+            bash -x "$script" || {
+              echo "::group::compiler errors (.err files)"
+              for f in build/*/obj/*.err; do
+                if [ -s "$f" ]; then
+                  echo "=== $f ==="
+                  head -n 40 "$f"
+                fi
+              done
+              echo "::endgroup::"
+              exit 1
+            }
           done
 
       - name: Build Xcode Project / IPA
@@ -111,7 +164,7 @@ jobs:
             -sdk iphoneos \
             -derivedDataPath build/DerivedData \
             CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
-            
+
           mkdir -p Payload
           mv build/DerivedData/Build/Products/Release-iphoneos/Madeira.app Payload/
           zip -r Madeira.ipa Payload/
