@@ -53,17 +53,13 @@ jobs:
           sudo softwareupdate --install-rosetta --agree-to-license || true
           ASSETS="$(gh api 'repos/Gcenx/macOS_Wine_builds/releases?per_page=15' \
             --jq '.[].assets[].browser_download_url')"
-          echo "Available wine assets:"
-          echo "$ASSETS" | grep -E 'osx64\.tar\.xz$' || true
           URL="$(echo "$ASSETS" | grep -E '/wine-stable-[0-9._]+-osx64\.tar\.xz$' | head -1)"
           [ -n "$URL" ] || URL="$(echo "$ASSETS" | grep -E '/wine-(devel|staging)-[0-9._]+(-wow64)?-osx64\.tar\.xz$' | head -1)"
-          echo "Wine download: $URL"
           test -n "$URL"
           mkdir -p "$HOME/wine-dist"
           curl -L "$URL" -o /tmp/wine.tar.xz
           tar -xf /tmp/wine.tar.xz -C "$HOME/wine-dist"
           WINE_BIN="$(find "$HOME/wine-dist" -path '*Resources/wine/bin/wine' \( -type f -o -type l \) | head -1)"
-          echo "Wine binary: $WINE_BIN"
           test -n "$WINE_BIN"
           sudo ln -sf "$WINE_BIN" /opt/homebrew/bin/wine
           export WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml="
@@ -91,52 +87,30 @@ jobs:
           CC: x86_64-w64-mingw32-clang
           CXX: x86_64-w64-mingw32-clang++
         run: |
-          set -uo pipefail
+          set -euo pipefail
           export PATH="$PATH:$MINGW_BIN"
-          echo "--- toolchain versions ---"
-          which clang bison flex wine x86_64-w64-mingw32-clang || true
-          clang --version | head -1
-          x86_64-w64-mingw32-clang --version | head -1
-          "$LLVM_PREFIX/bin/llvm-config" --version || true
-          bison --version | head -1
-          xcrun --sdk iphoneos --show-sdk-version
-          
           for script in build/*/build.sh; do
             echo "Running $script..."
-            bash -x "$script" || echo "WARNING: $script exited with non-zero status"
+            bash -x "$script"
           done
-
-      - name: Dump Build Error Logs
-        if: always()
-        run: |
-          echo "Searching for all .err files in the workspace..."
-          find . -name "*.err" -type f | while read -r errfile; do
-            echo "=================================================="
-            echo "FILE: $errfile"
-            echo "=================================================="
-            cat "$errfile"
-            echo -e "\n"
-          done
-
-      - name: Upload Error Logs Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: all-build-error-logs
-          path: |
-            **/obj/*.err
-            **/*.err
-          if-no-files-found: ignore
 
       - name: Build Xcode Project / IPA
         run: |
           export PATH="$PATH:$MINGW_BIN"
+          set -o pipefail
           xcodebuild -project app/Madeira.xcodeproj \
             -scheme Madeira \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build/DerivedData \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            | xcpretty || xcodebuild -project app/Madeira.xcodeproj \
+            -scheme Madeira \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build/DerivedData \
             CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+            
           mkdir -p Payload
           mv build/DerivedData/Build/Products/Release-iphoneos/Madeira.app Payload/
           zip -r Madeira.ipa Payload/
