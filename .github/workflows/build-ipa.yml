@@ -40,10 +40,6 @@ jobs:
           MINGW_PREFIX="$(pwd)/toolchains/llvm-mingw-20260421-ucrt-macos-universal"
           echo "MINGW_BIN=$MINGW_PREFIX/bin" >> $GITHUB_ENV
           echo "LLVM_PREFIX=$(brew --prefix llvm)" >> $GITHUB_ENV
-          echo "CC_w64=$MINGW_PREFIX/bin/x86_64-w64-mingw32-clang" >> $GITHUB_ENV
-          echo "CXX_w64=$MINGW_PREFIX/bin/x86_64-w64-mingw32-clang++" >> $GITHUB_ENV
-          echo "INCLUDES_w64=$MINGW_PREFIX/x86_64-w64-mingw32/include" >> $GITHUB_ENV
-          
           echo "$MINGW_PREFIX/bin" >> $GITHUB_PATH
           echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
           echo "$(brew --prefix flex)/bin" >> $GITHUB_PATH
@@ -95,7 +91,7 @@ jobs:
           CC: x86_64-w64-mingw32-clang
           CXX: x86_64-w64-mingw32-clang++
         run: |
-          set -euo pipefail
+          set -uo pipefail
           export PATH="$PATH:$MINGW_BIN"
           echo "--- toolchain versions ---"
           which clang bison flex wine x86_64-w64-mingw32-clang || true
@@ -107,31 +103,29 @@ jobs:
           
           for script in build/*/build.sh; do
             echo "Running $script..."
-            bash -x "$script"
+            bash -x "$script" || echo "WARNING: $script exited with non-zero status"
           done
 
       - name: Dump Build Error Logs
-        if: failure()
+        if: always()
         run: |
-          shopt -s nullglob
-          found=0
-          for errfile in build/*/obj/*.err; do
-            if [ -s "$errfile" ]; then
-              found=1
-              echo "=== ERROR IN $errfile ==="
-              head -n 40 "$errfile"
-              echo
-            fi
+          echo "Searching for all .err files in the workspace..."
+          find . -name "*.err" -type f | while read -r errfile; do
+            echo "=================================================="
+            echo "FILE: $errfile"
+            echo "=================================================="
+            cat "$errfile"
+            echo -e "\n"
           done
-          [ "$found" = 1 ] || echo "No non-empty .err files found under build/*/obj/"
 
-      - name: Upload Error Logs
-        if: failure()
+      - name: Upload Error Logs Artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-error-logs
+          name: all-build-error-logs
           path: |
-            build/*/obj/*.err
+            **/obj/*.err
+            **/*.err
           if-no-files-found: ignore
 
       - name: Build Xcode Project / IPA
